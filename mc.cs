@@ -13,11 +13,12 @@ using Mono.Terminal;
 
 namespace MouselessCommander {
 
-	public class Shell {
-		Container container;
+	public class Shell : Container {
 		Panel left, right;
 		ButtonBar bar;
 		MenuBar menu;
+		Label prompt;
+		Entry editor;
 		
 		string [] bar_labels = new string [] {
 			"Help", "Menu", "View", "Edit", "Copy", "RenMov", "Mkdir", "Delete", "PullDn", "Quit"
@@ -65,14 +66,19 @@ namespace MouselessCommander {
 				}),
 			new MenuBarItem ("Options", null),
 			new MenuBarItem ("Right", new MenuItem [] {
-					new MenuItem ("_Listing Mode...", "Help1", null),
-					new MenuItem ("_Sort order...", "Help2 2 3 4 4", null),
+					new MenuItem ("_Listing Mode...", null, null),
+					new MenuItem ("_Sort order...", null, null),
 					new MenuItem ("_Filter...", null, null),
 					new MenuItem ("_Rescan", "C-r", null),
 				})
 		};
-			
-		public Shell ()
+
+		public override bool ProcessHotKey (int key)
+		{
+			return base.ProcessHotKey (key);
+		}
+		
+		public Shell () : base (0, 0, Application.Cols, Application.Lines)
 		{
 			SetupGUI ();
 		}
@@ -86,11 +92,16 @@ namespace MouselessCommander {
 		{
 			var height = PanelHeight ();
 
-			container = new Container (0, 0, Application.Cols, Application.Lines);
 			left = Panel.Create ("left", height);
 			right = Panel.Create ("right", height);
 			bar = new ButtonBar (bar_labels);
 			menu = new MenuBar (mc_menu);
+			prompt = new Label (0, Application.Lines-2, "bash$ ") {
+				Color = Application.ColorBasic
+			};
+			editor = new Entry (prompt.Text.Length, Application.Lines-2, Application.Cols - prompt.Text.Length, "") {
+				Color = Application.ColorBasic,
+			};
 			
 			bar.Action += delegate (int n){
 				switch (n){
@@ -102,25 +113,21 @@ namespace MouselessCommander {
 					break;
 				}
 			};
-			
 
-			container.Add (left);
-			container.Add (right);
-			container.Add (bar);
-			container.Add (menu);
+			Add (left);
+			Add (right);
+			Add (bar);
+			Add (menu);
+			Add (prompt);
+			Add (editor);
 		}
 
-		void RunGui ()
-		{
-			Application.Run (container);
-		}
-		
 		static void Main ()
 		{
 			Application.Init (false);
 
 			Shell s = new Shell ();
-			s.RunGui ();
+			Application.Run (s);
 		}
 	}
 }
