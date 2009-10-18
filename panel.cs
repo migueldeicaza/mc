@@ -1,3 +1,11 @@
+//
+// mc.cs: Panel controls
+//
+// Authors:
+//   Miguel de Icaza (miguel@gnome.org)
+//
+// Licensed under the MIT X11 license
+//
 using Mono.Terminal;
 
 namespace MouselessCommander {

@@ -1,3 +1,11 @@
+//
+// button.cs: The button bar widget
+//
+// Authors:
+//   Miguel de Icaza (miguel@gnome.org)
+//
+// Licensed under the MIT X11 license
+//
 using System;
 using Mono.Terminal;
 

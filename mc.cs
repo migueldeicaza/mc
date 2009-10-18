@@ -1,3 +1,11 @@
+//
+// mc.cs: Main program
+//
+// Authors:
+//   Miguel de Icaza (miguel@gnome.org)
+//
+// Licensed under the MIT X11 license
+//
 using System;
 using System.Collections;
 using System.IO;
@@ -44,9 +52,9 @@ namespace MouselessCommander {
 					new MenuItem ("Switch _Panels on/off", "Control-o", null),
 					new MenuItem ("_Compare Directories", "Control-x d", null),
 					new MenuItem ("Show Directory S_izes", "F6", null),
-					null
+					null,
 					new MenuItem ("_Command History", null, null),
-					new MenuItem ("_Directory Hotlist", "Control-\", null),
+					new MenuItem ("_Directory Hotlist", "Control-\\", null),
 					null,
 					new MenuItem ("_Toggle section", "Control-t", null),
 					new MenuItem ("_Select", "Alt-+, +", null),
