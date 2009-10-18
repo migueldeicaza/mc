@@ -14,7 +14,7 @@ using Mono.Terminal;
 namespace MouselessCommander {
 
 	public class Shell : Container {
-		Panel left, right;
+		Panel left, right, current_panel;
 		ButtonBar bar;
 		MenuBar menu;
 		Label prompt;
@@ -75,6 +75,25 @@ namespace MouselessCommander {
 
 		public override bool ProcessHotKey (int key)
 		{
+			if (editor.CursorPosition == 0){
+				if ((key == '>' || key == Curses.KeyRight) && current_panel.CanExpandSelected){
+					current_panel.ExpandSelected ();
+					return true;
+				}
+				if ((key == '<' || key == Curses.KeyLeft)){
+					current_panel.CollapseAction ();
+					return true;
+				}
+			}
+			if (key == 12) { // Control-l
+				Application.Refresh ();
+				return true;
+			}
+			
+			if (current_panel.ProcessKey (key)){
+				editor.PositionCursor ();
+				return true;
+			}
 			return base.ProcessHotKey (key);
 		}
 		
@@ -120,6 +139,8 @@ namespace MouselessCommander {
 			Add (menu);
 			Add (prompt);
 			Add (editor);
+
+			current_panel = left;
 		}
 
 		static void Main ()
