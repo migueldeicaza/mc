@@ -14,11 +14,12 @@ using Mono.Terminal;
 namespace MouselessCommander {
 
 	public class Shell : Container {
-		Panel left, right, current_panel;
+		public Panel CurrentPanel;
+		Panel left, right;
 		ButtonBar bar;
 		MenuBar menu;
 		Label prompt;
-		Entry editor;
+		Entry entry;
 		
 		string [] bar_labels = new string [] {
 			"Help", "Menu", "View", "Edit", "Copy", "RenMov", "Mkdir", "Delete", "PullDn", "Quit"
@@ -75,13 +76,13 @@ namespace MouselessCommander {
 
 		public override bool ProcessHotKey (int key)
 		{
-			if (editor.CursorPosition == 0){
-				if ((key == '>' || key == Curses.KeyRight) && current_panel.CanExpandSelected){
-					current_panel.ExpandSelected ();
+			if (entry.CursorPosition == 0){
+				if ((key == '>' || key == Curses.KeyRight) && CurrentPanel.CanExpandSelected){
+					CurrentPanel.ExpandSelected ();
 					return true;
 				}
 				if ((key == '<' || key == Curses.KeyLeft)){
-					current_panel.CollapseAction ();
+					CurrentPanel.CollapseAction ();
 					return true;
 				}
 			}
@@ -89,12 +90,19 @@ namespace MouselessCommander {
 				Application.Refresh ();
 				return true;
 			}
-			
-			if (current_panel.ProcessKey (key)){
-				editor.PositionCursor ();
-				return true;
-			}
+
 			return base.ProcessHotKey (key);
+		}
+
+		public override bool ProcessKey (int key)
+		{
+			if (base.ProcessKey (key))
+				return true;
+
+			if (entry.ProcessKey (key))
+				return true;
+			
+			return false;
 		}
 		
 		public Shell () : base (0, 0, Application.Cols, Application.Lines)
@@ -102,30 +110,39 @@ namespace MouselessCommander {
 			SetupGUI ();
 		}
 
-		int PanelHeight ()
+		public override void DoSizeChanged ()
 		{
-			return Application.Lines - 4;
+			base.DoSizeChanged ();
+			entry.y = Application.Lines-2;
+			entry.w = Application.Cols - prompt.Text.Length;
 		}
-		
+
 		void SetupGUI ()
 		{
-			var height = PanelHeight ();
+			var height = Application.Lines - 4;
 
-			left = Panel.Create ("left", height);
-			right = Panel.Create ("right", height);
+			left = Panel.Create (this, "left", 4);
+			right = Panel.Create (this, "right", 4);
 			bar = new ButtonBar (bar_labels);
 			menu = new MenuBar (mc_menu);
 			prompt = new Label (0, Application.Lines-2, "bash$ ") {
 				Color = Application.ColorBasic
 			};
-			editor = new Entry (prompt.Text.Length, Application.Lines-2, Application.Cols - prompt.Text.Length, "") {
+			entry = new Entry (prompt.Text.Length, Application.Lines-2, Application.Cols - prompt.Text.Length, "") {
 				Color = Application.ColorBasic,
+				CanFocus = false,
 			};
 			
 			bar.Action += delegate (int n){
 				switch (n){
 				case 9:
 					menu.Activate (0);
+					break;
+
+				case 10:
+					var r = MessageBox.Query (56, 7, "Midnight Commander NG", "Do you really want to quit?", "Yes", "No");
+					if (r == 0)
+						Running = false;
 					break;
 					
 				default:
@@ -138,9 +155,9 @@ namespace MouselessCommander {
 			Add (bar);
 			Add (menu);
 			Add (prompt);
-			Add (editor);
+			Add (entry);
 
-			current_panel = left;
+			SetFocus (left);
 		}
 
 		static void Main ()

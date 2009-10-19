@@ -35,6 +35,11 @@ namespace MouselessCommander {
 			}
 		}
 
+		public override void DoSizeChanged ()
+		{
+			y = Application.Lines-1;
+		}
+		
 		void Raise (int n)
 		{
 			if (Action != null)

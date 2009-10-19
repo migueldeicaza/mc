@@ -53,13 +53,12 @@ namespace MouselessCommander {
 		{
 			if (nodes == null)
 				throw new ArgumentNullException ("nodes");
-			
+
 			for (int i = 0; i < nodes.Length; i++){
 				if (nodes [i].StartIdx == idx)
 					return nodes [i];
-				if (i+1 < nodes.Length && nodes [i+1].StartIdx > idx){
+				if (i+1 == nodes.Length || nodes [i+1].StartIdx > idx)
 					return GetNodeAt (idx, ((DirNode) nodes [i]).Nodes);
-				}
 			}
 			return null;
 		}
@@ -69,7 +68,7 @@ namespace MouselessCommander {
 			for (int i = 0; i < nodes.Length; i++){
 				if (nodes [i].StartIdx == idx)
 					return Path.Combine (start, nodes [i].Info.Name);
-				if (i+1 < nodes.Length && nodes [i+1].StartIdx > idx)
+				if (i+1 == nodes.Length || nodes [i+1].StartIdx > idx)
 					return GetName (idx, Path.Combine (start, nodes [i].Info.Name), ((DirNode) nodes [i]).Nodes);
 			}
 			throw new Exception ("This should not happen");
@@ -77,7 +76,10 @@ namespace MouselessCommander {
 		
 		public FileNode this [int idx]{
 			get {
-				return GetNodeAt (idx, nodes);
+				var x = GetNodeAt (idx, nodes);
+				if (x == null)
+					GetNodeAt (idx, nodes);
+				return x;
 			}
 		}
 
@@ -156,6 +158,9 @@ namespace MouselessCommander {
 			if (node == null)
 				return;
 			node.Expanded = false;
+			foreach (var n in node.Nodes)
+				n.Marked = false;
+			
 			Count = UpdateIndexes (nodes, 0, 0);
 		}
 		
@@ -173,6 +178,7 @@ namespace MouselessCommander {
 	
 	public class Panel : Frame {
 		static int ColorDir;
+		Shell shell;
 		
 		SortOrder sort_order = SortOrder.Name;
 		bool group_dirs = true;
@@ -254,8 +260,10 @@ namespace MouselessCommander {
 			return 0;
 		}
 		
-		Panel (string path, int x, int y, int w, int h) : base (x, y, w, h, path)
+		Panel (Shell shell, string path, int x, int y, int w, int h) : base (x, y, w, h, path)
 		{
+			this.shell = shell;
+			CanFocus = true;
 			listing = Listing.LoadFrom (path, CompareNodes);
 			Capacity = h - 2;
 		}
@@ -277,17 +285,34 @@ namespace MouselessCommander {
 			}
 		}
 
+		public override bool HasFocus {
+			get {
+				return base.HasFocus;
+			}
+
+			set {
+				if (value)
+					shell.CurrentPanel = this;
+				base.HasFocus = value;
+			}
+		}
+		
 		public void DrawItem (int nth, bool is_selected)
 		{
 			char ch;
 			
 			if (nth >= listing.Count)
 				throw new Exception ("overflow");
-			
+
+			is_selected = HasFocus && is_selected;
+				
 			Move (y + (nth-top) + 1, x + 1);
 			
 			Listing.FileNode node = listing [nth];
 			int color;
+
+			if (node == null)
+				throw new Exception (String.Format ("Problem fetching item {0}", nth));
 
 			if (node.Info.IsDirectory){
 				color = is_selected ? ColorFocus : ColorDir;
@@ -306,14 +331,32 @@ namespace MouselessCommander {
 			Curses.addstr (node.Info.Name);
 		}
 		
-		public static Panel Create (string kind, int height)
+		public override void DoSizeChanged ()
 		{
+			base.DoSizeChanged ();
+
+			if (x == 0){
+				w = Application.Cols/2;
+			} else {
+				w = Application.Cols/2+Application.Cols%2;
+				x = Application.Cols/2;
+			}
+			
+			h = Application.Lines-4;
+
+			Capacity = h - 2;
+		}
+		
+		public static Panel Create (Shell shell, string kind, int taken)
+		{
+			var height = Application.Lines - taken;
+			
 			switch (kind){
 			case "left":
-				return new Panel ("/home/miguel", 0, 1, Application.Cols/2, height);
+				return new Panel (shell, "/home/miguel", 0, 1, Application.Cols/2, height);
 					
 			case "right":
-				return new Panel ("/home/miguel", Application.Cols/2, 1, Application.Cols/2+Application.Cols%2, height);
+				return new Panel (shell, "/home/miguel", Application.Cols/2, 1, Application.Cols/2+Application.Cols%2, height);
 			}
 			return null;
 		}
