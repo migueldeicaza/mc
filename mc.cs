@@ -74,6 +74,14 @@ namespace MouselessCommander {
 				})
 		};
 
+		public Panel OtherPanel {
+			get {
+				if (left == CurrentPanel)
+					return right;
+				return left;
+			}
+		}
+		
 		public override bool ProcessHotKey (int key)
 		{
 			if (entry.CursorPosition == 0){
@@ -135,6 +143,10 @@ namespace MouselessCommander {
 			
 			bar.Action += delegate (int n){
 				switch (n){
+				case 5:
+					CurrentPanel.Copy (OtherPanel.CurrentPath);
+					break;
+					
 				case 9:
 					menu.Activate (0);
 					break;

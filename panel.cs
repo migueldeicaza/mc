@@ -28,6 +28,17 @@ namespace MouselessCommander {
 			public bool Marked;
 			public UnixFileSystemInfo Info;
 
+			//
+			// Have to use this ugly hack, because Mono.Posix does not
+			// return ".." in directory listings.   And creating instances
+			// of it, return the parent name, instead of ".."
+			//
+			public virtual string Name {
+				get {
+					return Info.Name;
+				}
+			}
+			
 			public FileNode (UnixFileSystemInfo info)
 			{
 				Info = info;
@@ -38,11 +49,19 @@ namespace MouselessCommander {
 			public FileNode [] Nodes;
 			public bool Expanded;
 			
-			public DirNode (UnixFileSystemInfo info) : base (info)
-			{
-			}
+			public DirNode (UnixFileSystemInfo info) : base (info) {}
 		}
 
+		public class DirNodeDotDot : DirNode {
+			public DirNodeDotDot (UnixFileSystemInfo info) : base (info) {}
+			
+			public override string Name {
+				get {
+					return "..";
+				}
+			}
+		}
+		
 		public IEnumerator GetEnumerator ()
 		{
 			foreach (var a in nodes)
@@ -67,32 +86,63 @@ namespace MouselessCommander {
 		{
 			for (int i = 0; i < nodes.Length; i++){
 				if (nodes [i].StartIdx == idx)
-					return Path.Combine (start, nodes [i].Info.Name);
+					return Path.Combine (start, nodes [i].Name);
 				if (i+1 == nodes.Length || nodes [i+1].StartIdx > idx)
-					return GetName (idx, Path.Combine (start, nodes [i].Info.Name), ((DirNode) nodes [i]).Nodes);
+					return GetName (idx, Path.Combine (start, nodes [i].Name), ((DirNode) nodes [i]).Nodes);
 			}
 			throw new Exception ("This should not happen");
+		}
+
+		string GetPathAt (int idx, FileNode [] nodes)
+		{
+			for (int i = 0; i < nodes.Length; i++){
+				if (nodes [i].StartIdx == idx)
+					return nodes [i].Name;
+				if (i+1 == nodes.Length || nodes [i+1].StartIdx > idx)
+					return Path.Combine (nodes [i].Name, GetPathAt (idx, ((DirNode) nodes [i]).Nodes));
+			}
+			return null;
+		}
+		
+		public string GetPathAt (int idx)
+		{
+			return GetPathAt (idx, nodes);
+		}
+
+		public int NodeWithName (string s)
+		{
+			for (int i = 0; i < nodes.Length; i++){
+				if (nodes [i].Name == s)
+					return i;
+			}
+			return -1;
+			
 		}
 		
 		public FileNode this [int idx]{
 			get {
 				var x = GetNodeAt (idx, nodes);
-				if (x == null)
-					GetNodeAt (idx, nodes);
 				return x;
 			}
 		}
 
-		FileNode [] PopulateNodes (UnixFileSystemInfo [] root)
+		FileNode [] PopulateNodes (bool need_dotdot, UnixFileSystemInfo [] root)
 		{
-			FileNode [] pnodes = new FileNode [root.Length];
+			FileNode [] pnodes = new FileNode [root.Length + (need_dotdot ? 1 : 0)];
 			int i = 0;
+
+			if (need_dotdot){
+				pnodes [0] = new DirNodeDotDot (new UnixDirectoryInfo (".."));
+				i++;
+			}
+			
 			foreach (var info in root){
 				if (info.IsDirectory)
 					pnodes [i++] = new DirNode (info);
 				else
 					pnodes [i++] = new FileNode (info);
 			}
+
 			Array.Sort<FileNode> (pnodes, compare);
 			return pnodes;
 		}
@@ -113,7 +163,7 @@ namespace MouselessCommander {
 		{
 			this.url = url;
 			this.compare = compare;
-			nodes = PopulateNodes (root);
+			nodes = PopulateNodes (url != "/", root);
 			Count = UpdateIndexes (nodes, 0, 0);
 		}
 
@@ -129,7 +179,7 @@ namespace MouselessCommander {
 				
 			try {
 				var udi = new UnixDirectoryInfo (name);
-				dn.Nodes = PopulateNodes (udi.GetFileSystemEntries ());
+				dn.Nodes = PopulateNodes (true, udi.GetFileSystemEntries ());
 				dn.Expanded = true;
 			} catch (Exception e){
 				Console.WriteLine ("Error loading {0}", name);
@@ -183,7 +233,8 @@ namespace MouselessCommander {
 		SortOrder sort_order = SortOrder.Name;
 		bool group_dirs = true;
 		Listing listing;
-		int top, selected;
+		int top, selected, marked;
+		string current_path;
 		
 		static Panel ()
 		{
@@ -206,6 +257,12 @@ namespace MouselessCommander {
 		
 		int CompareNodes (Listing.FileNode a, Listing.FileNode b)
 		{
+			if (a.Name == ".."){
+				if (b.Name != "..")
+					return -1;
+				return 0;
+			}
+		
 			int nl = a.Nested - b.Nested;
 			if (nl != 0)
 				return nl;
@@ -223,13 +280,14 @@ namespace MouselessCommander {
 					return 1;
 				}
 			}
+
 			switch (sort_order){
 			case SortOrder.Name:
-				return string.Compare (a.Info.Name, b.Info.Name);
+				return string.Compare (a.Name, b.Name);
 				
 			case SortOrder.Extension:
-				var sa = Path.GetExtension (a.Info.Name);
-				var sb = Path.GetExtension (b.Info.Name);
+				var sa = Path.GetExtension (a.Name);
+				var sb = Path.GetExtension (b.Name);
 				return string.Compare (sa, sb);
 				
 			case SortOrder.ModifyTime:
@@ -264,11 +322,34 @@ namespace MouselessCommander {
 		{
 			this.shell = shell;
 			CanFocus = true;
-			listing = Listing.LoadFrom (path, CompareNodes);
 			Capacity = h - 2;
+			SetCurrentPath (path, false);
+			CurrentPath = path;
 		}
 
+		void SetCurrentPath (string path, bool refresh)
+		{
+			current_path = path;
+			Title = Path.GetFullPath (path);
+			listing = Listing.LoadFrom (current_path, CompareNodes);
+			top = 0;
+			selected = 0;
+			marked = 0;
+
+			if (refresh)
+				Redraw ();
+		}
+		
 		public int Capacity { get; private set; }
+		public string CurrentPath {
+			get {
+				return current_path;
+			}
+
+			set {
+				SetCurrentPath (value, true);
+			}
+		}
 		
 		public override void Redraw ()
 		{
@@ -277,10 +358,9 @@ namespace MouselessCommander {
 			int files = listing.Count;
 			
 			for (int i = 0; i < Capacity; i++){
-				if (i + top >= files){
-					Curses.addstr ("FUCK");
+				if (i + top >= files)
 					break;
-				}
+
 				DrawItem (top+i, top+i == selected);
 			}
 		}
@@ -328,7 +408,7 @@ namespace MouselessCommander {
 			for (int i = 0; i < node.Nested; i++)
 				Curses.addstr ("  ");
 			Curses.addch (ch);
-			Curses.addstr (node.Info.Name);
+			Curses.addstr (node.Name);
 		}
 		
 		public override void DoSizeChanged ()
@@ -364,7 +444,7 @@ namespace MouselessCommander {
 		bool MoveDown ()
 		{
 			if (selected == listing.Count-1)
-				return false;
+				return true;
 			
 			DrawItem (selected, false);
 			selected++;
@@ -382,7 +462,7 @@ namespace MouselessCommander {
 		bool MoveUp ()
 		{
 			if (selected == 0)
-				return false;
+				return true;
 			
 			DrawItem (selected, false);
 			selected--;
@@ -478,6 +558,42 @@ namespace MouselessCommander {
 			listing.Collapse (selected);
 			Redraw ();
 		}
+
+		//
+		// Handler for the return key on an item
+		//
+		void Action ()
+		{
+			var node = listing [selected];
+
+			if (node is Listing.DirNode){
+				string focus = node is Listing.DirNodeDotDot ? Path.GetFileName (Title) : null;
+				SetCurrentPath (Path.Combine (CurrentPath, listing.GetPathAt (selected)), false);
+
+				if (focus != null){
+					int idx = listing.NodeWithName (focus);
+					Console.WriteLine ("Got: {0}", idx);
+					if (idx != -1){
+						selected = idx;
+
+						// This could use some work to center on going up.
+						if (selected >= Capacity){
+							top = selected;
+						}
+					}
+				}
+				Redraw ();
+			}
+		}
+
+		public void Copy (string target_dir)
+		{
+			var msg_file = "Copy file \"{0}\"";
+			int dlen = 68;
+			var d = new Dialog (dlen, 10, "Copy");
+			d.Add (new Label (1, 0, "Copy N files"));
+			Application.Run (d);
+		}
 		
 		public override bool ProcessKey (int key)
 		{
@@ -495,6 +611,10 @@ namespace MouselessCommander {
 				PageDown ();
 				break;
 
+			case (int) '\n':
+				Action ();
+				break;
+				
 			case Curses.KeyPPage:
 			case (int)'v' + Curses.KeyAlt:
 				PageUp ();
@@ -502,9 +622,13 @@ namespace MouselessCommander {
 
 			case Curses.KeyInsertChar:
 			case 20: // Control-t
-				if (listing [selected].Info.Name == "..")
+				if (listing [selected].Name == "..")
 					return true;
 				listing [selected].Marked = !listing [selected].Marked;
+				if (listing [selected].Marked)
+					marked++;
+				else
+					marked--;
 				MoveDown ();
 				return true;
 					
