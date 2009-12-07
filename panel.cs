@@ -12,10 +12,11 @@ using System.IO;
 using System.Collections.Generic;
 using Mono.Terminal;
 using Mono.Unix;
+using Mono.Unix.Native;
 
 namespace MouselessCommander {
 
-	public class Listing : IEnumerable {
+	public class Listing : IEnumerable<Listing.FileNode> {
 		string url;
 		FileNode [] nodes;
 		Comparison<FileNode> compare;
@@ -62,7 +63,13 @@ namespace MouselessCommander {
 			}
 		}
 		
-		public IEnumerator GetEnumerator ()
+		public IEnumerator<FileNode> GetEnumerator ()
+		{
+			foreach (var a in nodes)
+				yield return a;
+		}
+
+		IEnumerator IEnumerable.GetEnumerator ()
 		{
 			foreach (var a in nodes)
 				yield return a;
@@ -376,7 +383,7 @@ namespace MouselessCommander {
 				base.HasFocus = value;
 			}
 		}
-		
+
 		public void DrawItem (int nth, bool is_selected)
 		{
 			char ch;
@@ -586,13 +593,95 @@ namespace MouselessCommander {
 			}
 		}
 
+		Hashtable dirs_created;
+		
+		bool PerformCopy (Progress progress, string source_path, bool is_dir, FilePermissions protection, string target)
+		{
+			string source_absolute_path = Path.Combine (CurrentPath, source_path);
+			
+			if (is_dir){
+				string target_dir = Path.Combine (target, source_path);
+				if (!dirs_created.Contains (target_dir)){
+
+					while (true){
+						int r = Syscall.mkdir (target_dir, protection | FilePermissions.S_IWUSR);
+						if (r == -1){
+							Errno errno = Stdlib.GetLastError ();
+							if (errno == Errno.EINTR)
+								continue;
+
+							if (errno == Errno.EEXIST || errno == Errno.EISDIR)
+								break;
+							
+							var msg = UnixMarshal.GetErrorDescription  (errno);
+							switch (Error.Query (Error.Result.RetryIgnoreCancel, msg, "While creating \"{0}\"", target_dir)){
+							case Error.Result.Retry:
+								continue;
+							case Error.Result.Ignore:
+								break;
+							case Error.Result.Cancel:
+								return false;
+							}
+						}
+						
+					} 
+					dirs_created [target_dir] = protection;
+				}
+				var udi = new UnixDirectoryInfo (source_absolute_path);
+				foreach (var entry in udi.GetFileSystemEntries ()){
+					if (entry.Name == "." || entry.Name == "..")
+						continue;
+
+					PerformCopy (progress,
+						     Path.Combine (source_absolute_path, entry.Name),
+						     entry.IsDirectory, entry.Protection,
+						     Path.Combine (target_dir, entry.Name));
+				}
+			}
+			// Do file copy 
+			return true;
+		}
+		
 		public void Copy (string target_dir)
 		{
-			var msg_file = "Copy file \"{0}\"";
+			var msg_file = "Copy file \"{0}\" to: ";
 			int dlen = 68;
-			var d = new Dialog (dlen, 10, "Copy");
-			d.Add (new Label (1, 0, "Copy N files"));
+			int ilen = dlen-6;
+			var d = new Dialog (dlen, 8, "Copy");
+
+			if (marked > 1)
+				d.Add (new Label (1, 0, String.Format ("Copy {0} files", marked)));
+			else
+				d.Add (new Label (1, 0, String.Format (msg_file, listing.GetPathAt (selected).Ellipsize (ilen-msg_file.Length))));
+
+			var e = new Entry (1, 1, ilen, target_dir ?? "");
+			d.Add (e);
+
+			bool proceed = false;
+			var b = new Button (0, 0, "Ok", true);
+			b.Clicked += delegate {
+				d.Running = false;
+				proceed = true;
+			};
+			d.AddButton (b);
+			b = new Button (0, 0, "Cancel", true);
+			b.Clicked += (o,s) => d.Running = false;
+			d.AddButton (b);
+			
 			Application.Run (d);
+			if (!proceed)
+				return;
+
+			var progress = new Progress ("Copying", marked > 0 ? marked : 1);
+			dirs_created = new Hashtable ();
+			foreach (var f in listing){
+				if (!f.Marked)
+					continue;
+
+				PerformCopy (progress, listing.GetPathAt (f.StartIdx), f is Listing.DirNode, f.Info.Protection, target_dir);
+				progress.Step ();
+			}
+			dirs_created = null;
 		}
 		
 		public override bool ProcessKey (int key)
