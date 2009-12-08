@@ -15,6 +15,7 @@ namespace MouselessCommander {
 		[Flags]
 		public enum Result {
 			Retry = 1, Ignore = 2, Cancel = 4,
+			RetryCancel = 5,
 			RetryIgnoreCancel = 7
 		}
 
