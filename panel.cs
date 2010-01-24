@@ -441,10 +441,10 @@ namespace MouselessCommander {
 			
 			switch (kind){
 			case "left":
-				return new Panel (shell, "/home/miguel", 0, 1, Application.Cols/2, height);
+				return new Panel (shell, Environment.CurrentDirectory, 0, 1, Application.Cols/2, height);
 					
 			case "right":
-				return new Panel (shell, "/home/miguel", Application.Cols/2, 1, Application.Cols/2+Application.Cols%2, height);
+				return new Panel (shell, Environment.GetFolderPath (Environment.SpecialFolder.Personal), Application.Cols/2, 1, Application.Cols/2+Application.Cols%2, height);
 			}
 			return null;
 		}
