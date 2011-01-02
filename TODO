@@ -1,0 +1,11 @@
+Features Missing:
+
+   FUSE binding (instead of VFS)
+   File Viewer
+   
+
+File Management:
+   Copy:
+	Preserve permissions, ownership (if root)
+   Rename, Move, Delete.
+   Background operations       
