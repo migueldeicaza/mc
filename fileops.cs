@@ -103,46 +103,51 @@ namespace MouselessCommander {
 			return true;
 		}
 
+		bool ShouldRetryOperation (string text, string file)
+		{
+			Errno errno = Stdlib.GetLastError ();
+			if (errno == Errno.EINTR)
+				return true;
+			var msg = UnixMarshal.GetErrorDescription  (errno);
+			if (Error.Query (Error.Result.RetryCancel, msg, text, file) == Error.Result.Retry)
+				return true;
+			return false;
+		}
+		
 		public bool CopyFile (string source_absolute_path, string target_path)
 		{
+			bool ret = false;
+			
 			// Open Source
 			int source_fd;
 			while (true){
 				source_fd = Syscall.open (source_absolute_path, OpenFlags.O_RDONLY, (FilePermissions) 0);
 				if (source_fd != -1)
 					break;
-				Errno errno = Stdlib.GetLastError ();
-				if (errno == Errno.EINTR)
-					continue;
-			
-				var msg = UnixMarshal.GetErrorDescription  (errno);
-				switch (Error.Query (Error.Result.RetryCancel, msg, "While opening \"{0}\"", target_path)){
-				case Error.Result.Retry:
-					continue;
-				case Error.Result.Cancel:
-					return false;
-				}
-			
-			}
 
-			bool ret = false;
+				if (ShouldRetryOperation ("While opening \"{0}\"", target_path))
+					continue;
+				return false;
+			}
+			Stat stat;
+			while (true){
+				if (Syscall.fstat (source_fd, out stat) != -1)
+					break;
+
+				if (ShouldRetryOperation ("While probing for state of \"{0}\"", target_path))
+					continue;
+				goto close_source;
+			}
+			
 			// Open target
 			int target_fd;
 			while (true){
 				target_fd = Syscall.open (target_path, OpenFlags.O_WRONLY, FilePermissions.S_IWUSR);
 				if (target_fd != -1)
 					break;
-				Errno errno = Stdlib.GetLastError ();
-				if (errno == Errno.EINTR)
+				if (ShouldRetryOperation ("While creating \"{0}\"", target_path))
 					continue;
-			
-				var msg = UnixMarshal.GetErrorDescription  (errno);
-				switch (Error.Query (Error.Result.RetryCancel, msg, "While creating \"{0}\"", source_absolute_path)){
-				case Error.Result.Retry:
-					continue;
-				case Error.Result.Cancel:
-					goto close_source;
-				}
+				goto close_source;
 			}
 
 			AllocateBuffer ();
@@ -154,22 +159,18 @@ namespace MouselessCommander {
 				if (n != -1)
 					break;
 
-				Errno errno = Stdlib.GetLastError ();
-				if (errno == Errno.EINTR)
+				if (ShouldRetryOperation ("While reading \"{0}\"", source_absolute_path))
 					continue;
-			
-				var msg = UnixMarshal.GetErrorDescription  (errno);
-				switch (Error.Query (Error.Result.RetryCancel, msg, "While reading \"{0}\"", source_absolute_path)){
-				case Error.Result.Retry:
-					continue;
-				case Error.Result.Cancel:
-					goto close_both;
-				}
+				goto close_both;
 			}
 			while (true){
 				long count = Syscall.write (target_fd, io_buffer, (ulong) n);
 				if (count != -1)
 					break;
+
+				if (ShouldRetryOperation ("While writing \"{0}\"", target_path))
+					continue;
+				goto close_both;
 			}
 			ret = true;
 			
