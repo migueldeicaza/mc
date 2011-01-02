@@ -227,7 +227,7 @@ namespace MouselessCommander {
 			try {
 				var udi = new UnixDirectoryInfo (url);
 				return new Listing (url, udi.GetFileSystemEntries (), compare);
-			} catch {
+			} catch (Exception e){
 				return new Listing ();
 			}
 			return null;

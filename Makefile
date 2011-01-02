@@ -1,5 +1,6 @@
 SOURCES = \
 	button.cs	\
+	debug.cs	\
 	mc.cs		\
 	panel.cs	\
 	util.cs
