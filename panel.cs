@@ -624,7 +624,7 @@ namespace MouselessCommander {
 			if (!proceed)
 				return;
 
-			var progress = new Progress ("Copying", marked > 0 ? marked : 1);
+			var progress = new ProgressInteraction ("Copying", marked > 0 ? marked : 1);
 			using (var ctx = new CopyOperation (progress)){
 				foreach (var f in listing){
 					if (!f.Marked)

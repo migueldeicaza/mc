@@ -6,6 +6,10 @@
 //
 // Licensed under the MIT X11 license
 //
+// This file does not contain any UI code, it depends on the interfaces
+// for it, that way we can later implement the background operations
+// and notifications, or use without MouselessCommander.
+//
 using System;
 using System.IO;
 using System.Collections.Generic;
@@ -14,14 +18,29 @@ using Mono.Unix.Native;
 using System.Runtime.InteropServices;
 
 namespace MouselessCommander {
+	[Flags]
+	public enum OResult {
+		Retry = 1, Ignore = 2, Cancel = 4,
+		RetryCancel = 5,
+		RetryIgnoreCancel = 7
+	}
+	
+	public interface IUserInteraction {
+		OResult Query (OResult flags, string errormsg, string condition, string file);
+	}
+
+	public interface IProgressInteraction : IUserInteraction {
+		void Step ();
+	}
+	
 	public class FileOperation : IDisposable {
-		protected Progress Progress;
+		protected IProgressInteraction Interaction;
 		protected IntPtr io_buffer;
 		protected const int COPY_BUFFER_SIZE = 64 * 1024;
 
-		public FileOperation (Progress progress)
+		public FileOperation (IProgressInteraction interaction)
 		{
-			Progress = progress;
+			Interaction = interaction;
 		}
 
 		public void Dispose ()
@@ -53,7 +72,7 @@ namespace MouselessCommander {
 	public class CopyOperation : FileOperation {
 		Dictionary<string,FilePermissions> dirs_created;
 			
-		public CopyOperation (Progress progress) : base (progress)
+		public CopyOperation (IProgressInteraction interaction) : base (interaction)
 		{
 			dirs_created = new Dictionary<string,FilePermissions> ();
 		}
@@ -74,12 +93,12 @@ namespace MouselessCommander {
 						break;
 					
 					var msg = UnixMarshal.GetErrorDescription  (errno);
-					switch (Error.Query (Error.Result.RetryIgnoreCancel, msg, "While creating \"{0}\"", target_path)){
-					case Error.Result.Retry:
+					switch (Interaction.Query (OResult.RetryIgnoreCancel, msg, "While creating \"{0}\"", target_path)){
+					case OResult.Retry:
 						continue;
-					case Error.Result.Ignore:
+					case OResult.Ignore:
 						break;
-					case Error.Result.Cancel:
+					case OResult.Cancel:
 						return false;
 					}
 				} 
@@ -109,7 +128,7 @@ namespace MouselessCommander {
 			if (errno == Errno.EINTR)
 				return true;
 			var msg = UnixMarshal.GetErrorDescription  (errno);
-			if (Error.Query (Error.Result.RetryCancel, msg, text, file) == Error.Result.Retry)
+			if (Interaction.Query (OResult.RetryCancel, msg, text, file) == OResult.Retry)
 				return true;
 			return false;
 		}
@@ -172,7 +191,32 @@ namespace MouselessCommander {
 					continue;
 				goto close_both;
 			}
+
+			// File mode
+			while (true){
+				n = Syscall.fchmod (target_fd, stat.st_mode);
+				if (n == 0)
+					break;
+
+				if (ShouldRetryOperation ("Setting permissions on \"{0}\"", target_path))
+					continue;
+
+				goto close_both;
+			}
+
+			// The following are not considered errors if we can not set them
 			ret = true;
+			
+			// preserve owner and group if running as root
+			if (Syscall.geteuid () == 0)
+				Syscall.fchown (target_fd, stat.st_uid, stat.st_gid);
+			
+			// Set file time
+			Timeval [] dates = new Timeval [2] {
+				new Timeval () { tv_sec = stat.st_atime },
+				new Timeval () { tv_sec = stat.st_mtime }
+			};
+			Syscall.futimes (target_fd, dates);
 			
 		close_both:
 			Syscall.close (target_fd);
