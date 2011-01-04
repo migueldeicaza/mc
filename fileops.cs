@@ -20,13 +20,15 @@ using System.Runtime.InteropServices;
 namespace MouselessCommander {
 	[Flags]
 	public enum OResult {
-		Retry = 1, Ignore = 2, Cancel = 4,
+		Retry = 1, Ignore = 2, Cancel = 4, Skip = 16,
 		RetryCancel = 5,
-		RetryIgnoreCancel = 7
+		RetryIgnoreCancel = 7,
+		RetrySkipCancel = 21
 	}
 	
 	public interface IUserInteraction {
 		OResult Query (OResult flags, string errormsg, string condition, string file);
+		void Error (string msg);
 	}
 
 	public interface IProgressInteraction : IUserInteraction {
@@ -34,6 +36,10 @@ namespace MouselessCommander {
 	}
 	
 	public class FileOperation : IDisposable {
+		public enum Result {
+			Ok, Skip, Fail
+		}
+		
 		protected IProgressInteraction Interaction;
 		protected IntPtr io_buffer;
 		protected const int COPY_BUFFER_SIZE = 64 * 1024;
@@ -70,6 +76,7 @@ namespace MouselessCommander {
 	}
 	
 	public class CopyOperation : FileOperation {
+		bool skip;
 		Dictionary<string,FilePermissions> dirs_created;
 			
 		public CopyOperation (IProgressInteraction interaction) : base (interaction)
@@ -127,15 +134,35 @@ namespace MouselessCommander {
 			Errno errno = Stdlib.GetLastError ();
 			if (errno == Errno.EINTR)
 				return true;
-			var msg = UnixMarshal.GetErrorDescription  (errno);
-			if (Interaction.Query (OResult.RetryCancel, msg, text, file) == OResult.Retry)
+			return ShouldRetryOperation (UnixMarshal.GetErrorDescription  (errno), text, file);
+		}
+
+		bool ShouldRetryOperation (string msg, string text, string file)
+		{
+			var ret = Interaction.Query (OResult.RetrySkipCancel, msg, text, file);
+			if (ret == OResult.Retry)
 				return true;
+			if (ret == OResult.Skip)
+				skip = true;
 			return false;
 		}
 		
 		public bool CopyFile (string source_absolute_path, string target_path)
 		{
 			bool ret = false;
+			bool target_exists = false;
+			// Stat target
+			Stat tstat;
+			while (Syscall.stat (target_path, out tstat) == 0){
+				if (tstat.st_mode.HasFlag (FilePermissions.S_IFDIR)){
+					if (ShouldRetryOperation ("Target file is a directory", "Source file \"{0}\"",
+								  Path.GetFileName (source_absolute_path)))
+						continue;
+					return false;
+				}
+				target_exists = true;
+				break;
+			}
 			
 			// Open Source
 			int source_fd;
@@ -156,6 +183,16 @@ namespace MouselessCommander {
 				if (ShouldRetryOperation ("While probing for state of \"{0}\"", target_path))
 					continue;
 				goto close_source;
+			}
+
+			// Make sure we are not overwriting the same file
+			if (stat.st_dev == tstat.st_dev && stat.st_ino == tstat.st_ino){
+				Interaction.Error ("Can not copy a file into itself");
+				skip = true;
+				goto close_source;
+			}
+
+			if (target_exists){
 			}
 			
 			// Open target
@@ -178,7 +215,7 @@ namespace MouselessCommander {
 				if (n != -1)
 					break;
 
-				if (ShouldRetryOperation ("While reading \"{0}\"", source_absolute_path))
+				if (ShouldRetryOperation ("While reading \"{0}\"", Path.GetFileName (source_absolute_path)))
 					continue;
 				goto close_both;
 			}
@@ -224,20 +261,20 @@ namespace MouselessCommander {
 			Syscall.close (source_fd);
 			return ret;
 		}
-		
-		public bool Perform (string cwd, string source_path, bool is_dir, FilePermissions protection, string target)
+
+		public Result Perform (string cwd, string source_path, bool is_dir, FilePermissions protection, string target)
 		{
 			string source_absolute_path = Path.Combine (cwd, source_path);
 			string target_path = Path.Combine (target, source_path);
 
 			if (is_dir)
 				if (!CopyDirectory (source_absolute_path, target_path, protection))
-					return false;
+					return skip ? Result.Skip : Result.Fail;
 			else
 				if (!CopyFile (source_absolute_path, target_path))
-					return false;
+					return skip ? Result.Skip : Result.Fail;
 
-			return true;
+			return Result.Ok;
 		}
 
 		

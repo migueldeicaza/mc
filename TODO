@@ -5,7 +5,10 @@ Features Missing:
    
 
 File Management:
+   Show progress
+   Compute ETA
    Copy:
-	Preserve permissions, ownership (if root)
+       Copy special device files (pipes, sockets, devices)
+       Support Overwrite yes/no/append;   For all targets: all/update/none/if size changes
    Rename, Move, Delete.
    Background operations       

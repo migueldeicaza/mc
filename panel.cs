@@ -529,6 +529,20 @@ namespace MouselessCommander {
 			}
 		}
 
+		void MoveTop ()
+		{
+			selected = 0;
+			top = 0;
+			Redraw ();
+		}
+
+		void MoveBottom ()
+		{
+			selected = listing.Count-1;
+			top = Math.Max (0, selected-Capacity+1);
+			Redraw ();
+		}
+
 		public bool CanExpandSelected {
 			get {
 				return listing [selected] is Listing.DirNode;
@@ -629,8 +643,11 @@ namespace MouselessCommander {
 				foreach (var f in listing){
 					if (!f.Marked)
 						continue;
-					
-					ctx.Perform (CurrentPath, listing.GetPathAt (f.StartIdx), f is Listing.DirNode, f.Info.Protection, target_dir);
+
+					bool isDir = f is Listing.DirNode;
+					var r = ctx.Perform (CurrentPath, listing.GetPathAt (f.StartIdx), isDir, f.Info.Protection, target_dir);
+					if (r == FileOperation.Result.Fail)
+						break;
 					progress.Step ();
 				}
 			}
@@ -639,6 +656,14 @@ namespace MouselessCommander {
 		public override bool ProcessKey (int key)
 		{
 			switch (key){
+			case (int) '>' + Curses.KeyAlt:
+				MoveBottom ();
+				break;
+				
+			case (int) '<' + Curses.KeyAlt:
+				MoveTop ();
+				break;
+				
 			case Curses.KeyUp:
 			case 16: // Control-p
 				return MoveUp ();

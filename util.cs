@@ -16,6 +16,19 @@ namespace MouselessCommander {
 		public BasicInteraction (string title) : base (68, 12, title)
 		{
 		}
+
+		public void Error (string msg)
+		{
+			var d = new Dialog (Math.Min (Application.Cols-8, msg.Length), 8, "Error");
+			d.ErrorColors ();
+			d.Add (new Label (1, 1, msg));
+			var b = new Button (0, 0, "Ok");
+			b.Clicked += delegate {
+				d.Running = false;
+			};
+			d.Add (b);
+			Application.Run (d);
+		}
 		
 		public OResult Query (OResult flags, string errormsg, string condition, string file)
 		{

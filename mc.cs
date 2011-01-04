@@ -102,8 +102,28 @@ namespace MouselessCommander {
 			return base.ProcessHotKey (key);
 		}
 
+		void RunCommand ()
+		{
+			if (!entry.Text.StartsWith ("cd ")){
+				entry.Text = "";
+				return;
+			}
+
+			string path = entry.Text.Substring (3);
+			if (!Directory.Exists (path))
+				return;
+
+			CurrentPanel.CurrentPath = path;
+			entry.Text = "";
+		}
+		
 		public override bool ProcessKey (int key)
 		{
+			if (key == '\n' && entry.Text.Length > 0){
+				RunCommand ();
+				return true;
+			}
+			
 			if (base.ProcessKey (key))
 				return true;
 
