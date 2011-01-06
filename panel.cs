@@ -262,7 +262,18 @@ namespace MouselessCommander {
 			Size,
 			Inode
 		}
-		
+
+		public IEnumerable<Listing.FileNode> Selection ()
+		{
+			if (marked > 0){
+				foreach (var node in listing){
+					if (node.Marked)
+						yield return node;
+				}
+			} else
+				yield return listing [selected];
+		}
+
 		int CompareNodes (Listing.FileNode a, Listing.FileNode b)
 		{
 			if (a.Name == ".."){
@@ -640,19 +651,15 @@ namespace MouselessCommander {
 
 			var progress = new ProgressInteraction ("Copying", marked > 0 ? marked : 1);
 			using (var ctx = new CopyOperation (progress)){
-				foreach (var f in listing){
-					if (!f.Marked)
-						continue;
-
-					bool isDir = f is Listing.DirNode;
-					var r = ctx.Perform (CurrentPath, listing.GetPathAt (f.StartIdx), isDir, f.Info.Protection, target_dir);
-					if (r == FileOperation.Result.Fail)
+				foreach (var node in Selection ()){
+					bool isDir = node is Listing.DirNode;
+					var r = ctx.Perform (CurrentPath, listing.GetPathAt (node.StartIdx), isDir, node.Info.Protection, target_dir);
+					if (r == FileOperation.Result.Cancel)
 						break;
-					progress.Step ();
 				}
 			}
 		}
-		
+
 		public override bool ProcessKey (int key)
 		{
 			switch (key){

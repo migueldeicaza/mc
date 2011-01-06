@@ -20,24 +20,39 @@ using System.Runtime.InteropServices;
 namespace MouselessCommander {
 	[Flags]
 	public enum OResult {
+		// In/out values
 		Retry = 1, Ignore = 2, Cancel = 4, Skip = 16,
+
+		// in values
 		RetryCancel = 5,
 		RetryIgnoreCancel = 7,
 		RetrySkipCancel = 21
 	}
+
+	[Flags]
+	public enum TargetExistsAction {
+		Cancel,
+			
+		// Actions apply only to this file
+		Overwrite, Skip, Append,
+
+		// Actions apply to this file and any remaining ones
+		AlwaysOverwrite, AlwaysUpdate, AlwaysUpdateOnSizeMismatch, AlwaysSkip
+	}
 	
 	public interface IUserInteraction {
 		OResult Query (OResult flags, string errormsg, string condition, string file);
+		TargetExistsAction TargetExists (string file, DateTime sourceDate, long sourceSize, DateTime targetDate, long targetSize, bool multiple);
 		void Error (string msg);
 	}
 
 	public interface IProgressInteraction : IUserInteraction {
-		void Step ();
+		int Count { get; }
 	}
 	
 	public class FileOperation : IDisposable {
 		public enum Result {
-			Ok, Skip, Fail
+			Ok, Skip, Cancel
 		}
 		
 		protected IProgressInteraction Interaction;
@@ -76,6 +91,7 @@ namespace MouselessCommander {
 	}
 	
 	public class CopyOperation : FileOperation {
+		TargetExistsAction target_exists_action;
 		bool skip;
 		Dictionary<string,FilePermissions> dirs_created;
 			
@@ -84,7 +100,7 @@ namespace MouselessCommander {
 			dirs_created = new Dictionary<string,FilePermissions> ();
 		}
 
-		bool CopyDirectory (string source_absolute_path, string target_path, FilePermissions protection)
+		Result CopyDirectory (string source_absolute_path, string target_path, FilePermissions protection)
 		{
 			if (!dirs_created.ContainsKey (target_path)){
 				while (true){
@@ -106,7 +122,7 @@ namespace MouselessCommander {
 					case OResult.Ignore:
 						break;
 					case OResult.Cancel:
-						return false;
+						return Result.Cancel;
 					}
 				} 
 				dirs_created [target_path] = protection;
@@ -119,14 +135,16 @@ namespace MouselessCommander {
 
 				string source = Path.Combine (source_absolute_path, entry.Name);
 				string target = Path.Combine (target_path, entry.Name);
-				if (entry.IsDirectory)
-					if (!CopyDirectory (source, target, entry.Protection))
-						return false;
-				else
+				Result res;
+				if (entry.IsDirectory){
+					if (CopyDirectory (source, target, entry.Protection) == Result.Cancel)
+						return Result.Cancel;
+				} else {
 					if (!CopyFile (source, target))
-						return false;
+						return skip ? Result.Skip : Result.Cancel;
+				}
 			}
-			return true;
+			return Result.Ok;
 		}
 
 		bool ShouldRetryOperation (string text, string file)
@@ -147,7 +165,7 @@ namespace MouselessCommander {
 			return false;
 		}
 		
-		public bool CopyFile (string source_absolute_path, string target_path)
+		bool CopyFile (string source_absolute_path, string target_path)
 		{
 			bool ret = false;
 			bool target_exists = false;
@@ -192,13 +210,48 @@ namespace MouselessCommander {
 				goto close_source;
 			}
 
-			if (target_exists){
+			if (target_exists && target_exists_action < TargetExistsAction.AlwaysOverwrite){
+				target_exists_action = Interaction.TargetExists (
+					target_path,
+					NativeConvert.ToDateTime (stat.st_mtime), stat.st_size,
+					NativeConvert.ToDateTime (tstat.st_mtime), tstat.st_size, Interaction.Count > 1);
 			}
+			if (target_exists_action == TargetExistsAction.Cancel)
+				goto close_source;
+
+			if (target_exists_action == TargetExistsAction.Skip)
+				goto close_source;
 			
 			// Open target
 			int target_fd;
+			
+			switch (target_exists_action){
+			case TargetExistsAction.AlwaysUpdate:
+				if (stat.st_mtime > tstat.st_mtime)
+					goto case TargetExistsAction.Overwrite;
+				skip = true;
+				goto close_source;
+				
+			case TargetExistsAction.AlwaysUpdateOnSizeMismatch:
+				if (stat.st_size != tstat.st_size)
+					goto case TargetExistsAction.Overwrite;
+				skip = true;
+				goto close_source;
+				
+			case TargetExistsAction.AlwaysOverwrite:
+			case TargetExistsAction.Overwrite:
+				target_fd = Syscall.open (target_path, OpenFlags.O_CREAT | OpenFlags.O_WRONLY, FilePermissions.S_IWUSR);
+				break;
+				
+			case TargetExistsAction.Append:
+				target_fd = Syscall.open (target_path, OpenFlags.O_APPEND, FilePermissions.S_IWUSR);
+				break;
+			default:
+				throw new Exception ("Internal error: unhandled TargetExistsAction value");
+			}
+			
 			while (true){
-				target_fd = Syscall.open (target_path, OpenFlags.O_WRONLY, FilePermissions.S_IWUSR);
+
 				if (target_fd != -1)
 					break;
 				if (ShouldRetryOperation ("While creating \"{0}\"", target_path))
@@ -268,11 +321,10 @@ namespace MouselessCommander {
 			string target_path = Path.Combine (target, source_path);
 
 			if (is_dir)
-				if (!CopyDirectory (source_absolute_path, target_path, protection))
-					return skip ? Result.Skip : Result.Fail;
+				return CopyDirectory (source_absolute_path, target_path, protection);
 			else
 				if (!CopyFile (source_absolute_path, target_path))
-					return skip ? Result.Skip : Result.Fail;
+					return skip ? Result.Skip : Result.Cancel;
 
 			return Result.Ok;
 		}

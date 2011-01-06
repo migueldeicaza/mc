@@ -69,16 +69,58 @@ namespace MouselessCommander {
 			Application.Run (d);
 			return result;
 		}
+
+		void MakeButton (Dialog d, int x, int y, string text, System.Action action)
+		{
+			Button b = new Button (x, y, text);
+			b.Clicked += delegate {
+				action ();
+				d.Running = false;
+			};
+			d.Add (b);
+		}
+
+		public TargetExistsAction TargetExists (string file, DateTime sourceTime, long sourceSize, DateTime targetTime, long targetSize, bool multiple)
+		{
+			const int padding = 14;
+			const int minEllipse = 22;
+			const string fmt = "Target file \"{0}\" already exists";
+			TargetExistsAction result = TargetExistsAction.Cancel;
+			
+			var msg = String.Format (fmt, file);
+			if (msg.Length > Application.Cols-padding)
+				msg = String.Format (fmt, file.Ellipsize (Application.Cols-8-fmt.Length));
+			
+			var d = new Dialog (msg.Length + padding, 13 + (multiple ? 3 : 0), "File exists");
+			d.ErrorColors ();
+			d.Add (new Label (2, 1, msg));
+			// TODO: compute what changes actually matter (year, month, day, hour, minute)
+			d.Add (new Label (2, 3, String.Format ("Source date: {0}, size {1}", sourceTime, sourceSize)));
+			d.Add (new Label (2, 4, String.Format ("Target date: {0}, size {1}", targetTime, targetSize)));
+			d.Add (new Label (2, 6, "Override this target?"));
+			MakeButton (d, 24, 6, "Yes", () => result = TargetExistsAction.Overwrite);
+			MakeButton (d, 32, 6, "No", () => result = TargetExistsAction.Skip);
+			MakeButton (d, 39, 6, "Append", () => result = TargetExistsAction.Append);
+			if (multiple){
+				d.Add (new Label (2, 8, "Override all targets?"));
+				MakeButton (d, 24, 8, "aLl", () => result = TargetExistsAction.AlwaysOverwrite);
+				MakeButton (d, 32, 8, "Update", () => result = TargetExistsAction.AlwaysUpdate);
+				MakeButton (d, 43, 8, "None", () => result = TargetExistsAction.AlwaysSkip);
+				MakeButton (d, 24, 9, "if Size differs", () => result = TargetExistsAction.AlwaysUpdateOnSizeMismatch);
+			}
+			MakeButton (d, (d.w-4-"Cancel".Length)/2, 8 + (multiple ? 3 : 0), "Cancel", () => {});
+			Application.Run (d);
+			return result;
+		}
 	}
 
 	public class ProgressInteraction : BasicInteraction, IProgressInteraction {
-		public ProgressInteraction (string title, int steps) : base (title)
+		public ProgressInteraction (string title, int count) : base (title)
 		{
+			Count = count;
 		}
 
-		public void Step ()
-		{
-		}
+		public int Count { get; private set; }
 	}
 	
 	public static class StringExtensions {
