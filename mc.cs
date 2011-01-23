@@ -145,6 +145,10 @@ namespace MouselessCommander {
 			entry.w = Application.Cols - prompt.Text.Length;
 		}
 
+		void View (string file)
+		{
+		}
+			
 		void SetupGUI ()
 		{
 			var height = Application.Lines - 4;
@@ -163,6 +167,23 @@ namespace MouselessCommander {
 			
 			bar.Action += delegate (int n){
 				switch (n){
+				case 3:
+					var selected = CurrentPanel.SelectedNode;
+					if (selected is Listing.DirNode)
+						CurrentPanel.ChangeDir (selected as Listing.DirNode);
+					else {
+						Stream stream;
+						try {
+							stream = File.OpenRead (CurrentPanel.SelectedPath);
+						} catch (IOException ioe) {
+							Message.Error (ioe, "Could not open file", CurrentPanel.SelectedPath);
+							return;
+						}
+						FullView.Show (stream);
+
+						stream.Dispose ();
+					}
+					break;
 				case 5:
 					CurrentPanel.Copy (OtherPanel.CurrentPath);
 					break;

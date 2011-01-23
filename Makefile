@@ -4,7 +4,8 @@ SOURCES = \
 	fileops.cs	\
 	mc.cs		\
 	panel.cs	\
-	util.cs
+	util.cs		\
+	viewfile.cs
 
 mc.exe: $(SOURCES) Makefile
 	dmcs -debug -out:mc.exe $(SOURCES) -pkg:mono-curses -r:Mono.Posix

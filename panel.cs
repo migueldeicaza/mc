@@ -274,6 +274,18 @@ namespace MouselessCommander {
 				yield return listing [selected];
 		}
 
+		public Listing.FileNode SelectedNode { 
+			get {
+				return listing [selected];
+			}
+		}
+
+		public string SelectedPath {
+			get {
+				return Path.Combine (CurrentPath, listing.GetPathAt (selected));
+			}
+		}
+		
 		int CompareNodes (Listing.FileNode a, Listing.FileNode b)
 		{
 			if (a.Name == ".."){
@@ -597,28 +609,31 @@ namespace MouselessCommander {
 		//
 		void Action ()
 		{
-			var node = listing [selected];
+			var node = listing [selected] as Listing.DirNode;
 
-			if (node is Listing.DirNode){
-				string focus = node is Listing.DirNodeDotDot ? Path.GetFileName (Title) : null;
-				SetCurrentPath (Path.Combine (CurrentPath, listing.GetPathAt (selected)), false);
-
-				if (focus != null){
-					int idx = listing.NodeWithName (focus);
-					Console.WriteLine ("Got: {0}", idx);
-					if (idx != -1){
-						selected = idx;
-
-						// This could use some work to center on going up.
-						if (selected >= Capacity){
-							top = selected;
-						}
-					}
-				}
-				Redraw ();
-			}
+			if (node != null)
+				ChangeDir (node);
 		}
 
+		public void ChangeDir (Listing.DirNode node)
+		{
+			string focus = node is Listing.DirNodeDotDot ? Path.GetFileName (Title) : null;
+			SetCurrentPath (Path.Combine (CurrentPath, listing.GetPathAt (selected)), false);
+
+			if (focus != null){
+				int idx = listing.NodeWithName (focus);
+				if (idx != -1){
+					selected = idx;
+
+					// This could use some work to center on going up.
+					if (selected >= Capacity){
+						top = selected;
+					}
+				}
+			}
+			Redraw ();
+		}
+		
 		public void Copy (string target_dir)
 		{
 			var msg_file = "Copy file \"{0}\" to: ";

@@ -7,17 +7,19 @@
 // Licensed under the MIT X11 license
 //
 using System;
+using System.IO;
 using Mono.Terminal;
 using Mono.Unix.Native;
 
 namespace MouselessCommander {
 
-	public class BasicInteraction : Dialog, IUserInteraction  {
-		public BasicInteraction (string title) : base (68, 12, title)
+	public class Message {
+		public static void Error (IOException ioc, string msg, string file)
 		{
+			Error (msg + file);
 		}
-
-		public void Error (string msg)
+		
+		public static void Error (string msg)
 		{
 			var d = new Dialog (Math.Min (Application.Cols-8, msg.Length), 8, "Error");
 			d.ErrorColors ();
@@ -28,6 +30,17 @@ namespace MouselessCommander {
 			};
 			d.Add (b);
 			Application.Run (d);
+		}
+	}
+	
+	public class BasicInteraction : Dialog, IUserInteraction  {
+		public BasicInteraction (string title) : base (68, 12, title)
+		{
+		}
+
+		public void Error (string msg)
+		{
+			Message.Error (msg);
 		}
 		
 		public OResult Query (OResult flags, string errormsg, string condition, string file)
