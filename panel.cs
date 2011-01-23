@@ -677,6 +677,7 @@ namespace MouselessCommander {
 
 		public override bool ProcessKey (int key)
 		{
+			var result = true;
 			switch (key){
 			case (int) '>' + Curses.KeyAlt:
 				MoveBottom ();
@@ -688,11 +689,13 @@ namespace MouselessCommander {
 				
 			case Curses.KeyUp:
 			case 16: // Control-p
-				return MoveUp ();
+				result = MoveUp ();
+				break;
 				
 			case Curses.KeyDown:
 			case 14: // Control-n
-				return MoveDown ();
+				result = MoveDown ();
+				break;
 
 			case 22: // Control-v
 			case Curses.KeyNPage:
@@ -718,12 +721,15 @@ namespace MouselessCommander {
 				else
 					marked--;
 				MoveDown ();
-				return true;
+				break;
 					
 			default:
-				return false;
+				result = false;
+				break;
 			}
-			return true;
+			if (result)
+				Curses.refresh ();
+			return result;
 		}
 	}
 }

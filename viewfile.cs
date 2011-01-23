@@ -26,6 +26,10 @@ namespace MouselessCommander {
 		// Whether we are doing a Raw rendering, or a processed one.
 		bool Raw;
 
+		// Dirty management
+		DateTime dirtystart;
+		int dirty;
+
 		public ViewWidget (int x, int y, int w, int h, bool raw, Stream source) : base (x, y, w, h)
 		{ 
 			this.source = source;
@@ -56,7 +60,7 @@ namespace MouselessCommander {
 				return;
 
 			first_file_byte = 0;
-			encoding = Encoding.UTF8;
+			encoding = utf8;
 			
 			// Try to detect the encoding
 			byte [] buffer = new byte [4];
@@ -171,13 +175,14 @@ namespace MouselessCommander {
 
 		int ReadChar ()
 		{
+			Log ("Reading char from {0} encoding={1} {2}", source.Position, encoding, encoding==utf8);
 			if (Raw || encoding == utf8)
 				return source.ReadByte ();
-			
+
 			var a = source.ReadByte ();
 			var b = source.ReadByte ();
 			if (a == -1 || b == -1)
-				return 01;
+				return -1;
 			
 			if (encoding == utf16le)
 				return b << 8 | a;
@@ -193,6 +198,17 @@ namespace MouselessCommander {
 				return (a << 24) | (b << 16) | (c << 8) | d;
 			else
 				return (d << 24) | (c << 16) | (b << 8) | a;
+		}
+
+		int ScanSize ()
+		{
+			if (Raw || encoding == utf8)
+				return 1;
+			if (encoding == utf16be || encoding == utf16le)
+				return 2;
+			if (encoding == utf32be || encoding == utf32le)
+				return 4;
+			return 1;
 		}
 		
 		// We can not use the StreamReader here
@@ -217,27 +233,93 @@ namespace MouselessCommander {
 			return source.Position;
 		}
 
-		void MoveForward (int lines)
+		// We can not use the StreamReader here
+		//
+		// Returns the new file offset where we start displaying, or -1 if we can not
+		// scroll further.
+		long ScanBackward (int lines)
 		{
-			var newpos = ScanForward (lines);
+			if (!Raw)
+				reader.DiscardBufferedData ();
+			int scan_size = ScanSize ();
+			int line = 0;
+			
+			for (long scan = top_byte-scan_size; scan > first_file_byte; scan -= scan_size){
+				source.Position = scan;
+				int b = ReadChar ();
+				if (b == -1)
+					return -1;
+				if (b == 10)
+					line++;
+				if (lines == line)
+				    return scan;
+			}
+			return first_file_byte;
+		}
+
+		void SetTopByte (long newpos)
+		{
+			if (dirty == 0)
+				dirtystart = DateTime.UtcNow;
+			dirty++;
+			top_byte = newpos;
+		}
+
+		// Invoke this method instead of Redraw+refresh, as this takes care of updating while
+		// scrolling fast.
+		void UpdateView ()
+		{
+			if (Application.MainLoop.EventsPending ()){
+				if (dirty < 10 && (DateTime.UtcNow-dirtystart) < TimeSpan.FromMilliseconds (500)){
+					Log ("Skipped update, dirty={0} time={1}", dirty, DateTime.UtcNow-dirtystart);
+					return;
+				}
+			}
+			// to test the dirty system:
+			// System.Threading.Thread.Sleep (500);
+			Redraw ();
+			Curses.refresh ();
+			dirty = 0;
+		}
+		
+		void Scroll (int lines)
+		{
+			Log ("Scroll: {0}", lines);
+			long newpos = lines > 0 ? ScanForward (lines) : ScanBackward (-lines);
+			Log ("Scroll: {0} top_byte={1} newpos={2}", lines, top_byte, newpos);
 			if (newpos == -1)
 				return;
-			top_byte = newpos;
-			Redraw ();
+			SetTopByte (newpos);
+			UpdateView ();
 		}
 		
 		public override bool ProcessKey (int key)
 		{
 			switch (key){
-				// page down: space bar, control-v, page down:
+			// page down: space bar, control-v, page down:
 			case 32: 
 			case 22:
 			case Curses.KeyNPage:
-				MoveForward (h);
+				Scroll (h);
 				break;
 
+			// down-arrow, control-n
 			case Curses.KeyDown:
-				MoveForward (1);
+			case 14:
+				Scroll (1);
+				break;
+
+			// backspace, page-up, Alt-V
+			case 8:
+			case Curses.KeyPPage:
+			case Curses.KeyAlt + 'v':
+				Scroll (-h);
+				break;
+
+			// cursor, control-p
+			case Curses.KeyUp:
+			case 16:
+				Scroll (-h);
 				break;
 				
 			default:
@@ -257,7 +339,7 @@ namespace MouselessCommander {
 		
 		public FullView (Stream source) : base (0, 0, Application.Cols, Application.Lines)
 		{
-			view = new ViewWidget (0, 1, Application.Cols, Application.Lines-2, true, source);
+			view = new ViewWidget (0, 1, Application.Cols, Application.Lines-2, false, source);
 			bar = new ButtonBar (bar_labels);
 			bar.Action += delegate (int n){
 				switch (n){
