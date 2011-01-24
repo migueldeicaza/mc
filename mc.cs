@@ -157,7 +157,7 @@ namespace MouselessCommander {
 			right = Panel.Create (this, "right", 4);
 			bar = new ButtonBar (bar_labels);
 			menu = new MenuBar (mc_menu);
-			prompt = new Label (0, Application.Lines-2, "bash$ ") {
+			prompt = new Label (0, Application.Lines-2, "bash$ acción ") {
 				Color = Application.ColorBasic
 			};
 			entry = new Entry (prompt.Text.Length, Application.Lines-2, Application.Cols - prompt.Text.Length, "") {
@@ -220,7 +220,7 @@ namespace MouselessCommander {
 		{
 			setlocale (6, "");
 			Application.Init (false);
-
+					
 			Shell s = new Shell ();
 			Application.Run (s);
 		}

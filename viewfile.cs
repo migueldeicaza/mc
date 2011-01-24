@@ -112,8 +112,7 @@ namespace MouselessCommander {
 		// until the end of the widget area
 		public void ClearToEnd (int ccol, int crow)
 		{
-			Log ("ccol={0} crow={1} h={2} w={3}", ccol, crow, h, w);
-			for (int r = crow; r < h; r++){
+			for (int r = crow; r < h-1; r++){
 				Move (r+y, ccol+x);
 				for (int c = ccol; c < w; c++)
 					Curses.addch (' ');
@@ -126,23 +125,38 @@ namespace MouselessCommander {
 			for (int c = ccol; c < w; c++)
 				Curses.addch (' ');
 		}
+
+		void DrawStatus ()
+		{
+			Move (y, x);
+			Curses.attrset (Container.ContainerColorFocus);
+			for (int i = 0; i < w; i++)
+				Curses.addch (' ');
+			Move (y, x);
+			Curses.addstr ("File: FOOBAR");
+		}
 		
 		public override void Redraw ()
+		{
+			DrawStatus ();
+			DrawView ();
+		}
+
+		void DrawView ()
 		{
 			int col = 0;
 			bool skip_until_newline = false;
 			
-			SetPosition (top_byte);
 			Curses.attrset (Container.ContainerColorNormal);
-			Move (y, x);
-			
-			for (int row = 0; row < h; ){
+			Move (y+1, x);
+			SetPosition (top_byte);
+			for (int row = 0; row < h-1; ){
 				int c = GetChar ();
 				switch (c){
 					/* End of file */
 				case -1:
 					ClearToEnd (col, row);
-					row = h;
+					row = h-1;
 					break;
 
 				case 10:
@@ -417,7 +431,7 @@ namespace MouselessCommander {
 			case 32: 
 			case 22:
 			case Curses.KeyNPage:
-				Scroll (h);
+				Scroll (h-1);
 				break;
 
 			// down-arrow, control-n
@@ -430,7 +444,7 @@ namespace MouselessCommander {
 			case 8:
 			case Curses.KeyPPage:
 			case Curses.KeyAlt + 'v':
-				Scroll (-h);
+				Scroll (-(h-1));
 				break;
 
 			// cursor, control-p
@@ -451,7 +465,7 @@ namespace MouselessCommander {
 		ButtonBar bar;
 		
 		string [] bar_labels = new string [] {
-			"Help", "Wrap", "Quit", "Hex", "Line", "RxSrch", "Search", "Raw", "Unform", "Quit"
+			"", "Wrap", "Quit", "", "", "", "", "", "", "Quit"
 		};
 
 		void SetWrap (bool wrap)
@@ -468,7 +482,7 @@ namespace MouselessCommander {
 		
 		public FullView (Stream source) : base (0, 0, Application.Cols, Application.Lines)
 		{
-			view = new ViewWidget (0, 1, Application.Cols, Application.Lines-2, false, source);
+			view = new ViewWidget (0, 0, Application.Cols, Application.Lines-2, false, source);
 			bar = new ButtonBar (bar_labels);
 			bar.Action += delegate (int n){
 				switch (n){
