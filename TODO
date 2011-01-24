@@ -1,8 +1,15 @@
 Features Missing:
-
-   FUSE binding (instead of VFS)
-   File Viewer
+	FUSE binding (instead of VFS)
+	Subshell support
    
+Panel:
+	Display configurations (long, short, attributes)
+	File coloring
+	File kind marker
+	Mini-status per file
+	incremental-search
+	Various commands
+	Refresh
 
 File Management:
    Show progress
@@ -12,3 +19,32 @@ File Management:
        Support Overwrite yes/no/append;   For all targets: all/update/none/if size changes
    Rename, Move, Delete.
    Background operations       
+
+Viewer:
+	Hex mode
+	Formated mode (nroff pages, html pages)
+	^H support for nroff pages
+	Search
+	Regex search
+	Status bar
+
+View:
+	Bind this to F2?
+
+	Offer options for files, for example foo.html:
+	      [Raw]
+	      [HTML rendered]
+	      [DOM Rendered]
+
+	For example, foo.exe:
+	      [Raw]
+	      [Hex]
+	      [EXE/ECMA file rendering]
+	      
+Info Panel:
+	Support per-file information browsers
+		PE files: display PE headers
+		NET files: display .NET dump, disassembly
+
+	Since we are .NET program, we might as well add an assembly browser ;-)
+

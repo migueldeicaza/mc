@@ -21,6 +21,16 @@ namespace MouselessCommander {
 			this.labels = labels;
 		}
 
+		public string this [int idx] {
+			get {
+				return labels [idx];
+			}
+			set {
+				labels [idx] = value;
+				Redraw ();
+			}
+		}
+			
 		public override void Redraw ()
 		{
 			int x = 0;

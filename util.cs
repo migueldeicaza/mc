@@ -21,14 +21,14 @@ namespace MouselessCommander {
 		
 		public static void Error (string msg)
 		{
-			var d = new Dialog (Math.Min (Application.Cols-8, msg.Length), 8, "Error");
+			var d = new Dialog (Math.Min (Application.Cols-8, msg.Length+6), 8, "Error");
 			d.ErrorColors ();
 			d.Add (new Label (1, 1, msg));
 			var b = new Button (0, 0, "Ok");
 			b.Clicked += delegate {
 				d.Running = false;
 			};
-			d.Add (b);
+			d.AddButton (b);
 			Application.Run (d);
 		}
 	}

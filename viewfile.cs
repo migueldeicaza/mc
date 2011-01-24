@@ -1,3 +1,12 @@
+//
+// File viewer
+//
+// The file viewer can be used as a widget (ViewWidget) or as a
+// command that drives the whole viewing system (FullView -- a
+// full screen Container)
+//
+// Supports multiple encodings + raw viewing.
+
 using System;
 using System.IO;
 using Mono.Terminal;
@@ -6,8 +15,6 @@ using System.Text;
 namespace MouselessCommander {
 
 	public class ViewWidget : Widget {
-		public bool Wrap { get; set; }
-		
 		// When in "cooked" mode, this reads encoded text
 		StreamReader reader;
 
@@ -30,6 +37,8 @@ namespace MouselessCommander {
 		DateTime dirtystart;
 		int dirty;
 
+		bool wrap = true;
+			
 		public ViewWidget (int x, int y, int w, int h, bool raw, Stream source) : base (x, y, w, h)
 		{ 
 			this.source = source;
@@ -173,9 +182,18 @@ namespace MouselessCommander {
 			}
 		}
 
+		public bool Wrap {
+			get {
+				return wrap;
+			}
+			set {
+				wrap = value;
+				Redraw ();
+			}
+		}
+					
 		int ReadChar ()
 		{
-			Log ("Reading char from {0} encoding={1} {2}", source.Position, encoding, encoding==utf8);
 			if (Raw || encoding == utf8)
 				return source.ReadByte ();
 
@@ -200,6 +218,12 @@ namespace MouselessCommander {
 				return (d << 24) | (c << 16) | (b << 8) | a;
 		}
 
+		int ReadChar (long position)
+		{
+			source.Position = position;
+			return ReadChar ();
+		}
+		
 		int ScanSize ()
 		{
 			if (Raw || encoding == utf8)
@@ -215,48 +239,131 @@ namespace MouselessCommander {
 		//
 		// Returns the new file offset where we start displaying, or -1 if we can not
 		// scroll further.
-		long ScanForward (int lines)
+		long ScanForward (long start, int lines)
 		{
-			SetPosition (top_byte);
+			SetPosition (start);
+
 			for (int line = 0; line < lines; ){
 				int b = ReadChar ();
-
+				
 				if (b == -1)
 					return -1;
 				
-				if (Wrap){
-				} else {
-					if (b == 10)
-						line++;
-				}
+				if (b == '\n')
+					line++;
 			}
 			return source.Position;
 		}
 
+		long WrappedScanForward (long start, int lines)
+		{
+			SetPosition (start);
+
+			int col = 0;
+			for (int line = 0; line < lines; ){
+				int b = ReadChar ();
+				
+				switch (b){
+				case -1:
+					return -1;
+				case '\n':
+					col = 0;
+					line++;
+					break;
+				case '\r':
+					// ignore;
+					break;
+				case '\t':
+					col = (col/8+1)*8;
+					if (col > w){
+						line++;
+						col = col-w;
+					}
+					break;
+				default:
+					col++;
+					break;
+				}
+				if (col == w){
+					col = 0;
+					line++;
+				}
+			}
+			return source.Position;
+		}
+		
+		
 		// We can not use the StreamReader here
 		//
 		// Returns the new file offset where we start displaying, or -1 if we can not
 		// scroll further.
-		long ScanBackward (int lines)
+		long ScanBackward (long start, int lines)
 		{
-			if (!Raw)
-				reader.DiscardBufferedData ();
 			int scan_size = ScanSize ();
-			int line = 0;
-			
-			for (long scan = top_byte-scan_size; scan > first_file_byte; scan -= scan_size){
-				source.Position = scan;
-				int b = ReadChar ();
-				if (b == -1)
-					return -1;
-				if (b == 10)
-					line++;
-				if (lines == line)
-				    return scan;
+			long scan = start-scan_size;
+
+			for (int line = 0; line < lines && scan > first_file_byte; ){
+				while (scan > first_file_byte){
+					int b = ReadChar (scan-scan_size);
+					if (b == -1)
+						return first_file_byte;
+					if (b == '\n'){
+						if (++line == lines)
+							return scan;
+						scan -= scan_size;
+						break;
+					} 
+					scan -= scan_size;
+				}
 			}
-			return first_file_byte;
+			return scan;
 		}
 
+		// Counts the lenght of the string between [start,end) assuming that
+		// @start is the first column and that there are no new-lines embedded
+		int CountLength (long start, long end)
+		{
+			int len = 0;
+			
+			for (long pos = start; pos < end; pos++){
+				int b = ReadChar (pos);
+				switch (b){
+				case -1:
+					return len;
+				case '\r':
+				case '\n': // this really should not be called with newlines in the range
+					continue;
+				case '\t':
+					len = (len/8+1)*8;
+					continue;
+				default:
+					len++;
+					break;
+				}
+			}
+			return len;
+		}
+		
+		long WrappedScanBackward (long start, int lines)
+		{
+			int scan_size = ScanSize ();
+			long scan = start;
+
+			for (int line = 0; line < lines && scan > first_file_byte; ){
+				var previous_line = ScanBackward (scan, 1);
+				int chars = CountLength (previous_line, scan);
+				int linecount = chars == 0 ? 1 : (chars+w-1)/w;
+
+				if (line + linecount <= lines){
+					scan = previous_line;
+					line += linecount;
+					continue;
+				}
+				return WrappedScanForward (previous_line, linecount-(lines-line));
+			}
+			return scan;
+		}
+		
 		void SetTopByte (long newpos)
 		{
 			if (dirty == 0)
@@ -281,11 +388,21 @@ namespace MouselessCommander {
 			Curses.refresh ();
 			dirty = 0;
 		}
-		
+
+		long Scan (int lines)
+		{
+			if (!Raw)
+				reader.DiscardBufferedData ();
+			if (lines > 0)
+				return Wrap ? WrappedScanForward (top_byte, lines) : ScanForward (top_byte, lines);
+			else
+				return Wrap ? WrappedScanBackward (top_byte, -lines) : ScanBackward (top_byte, -lines);
+		}
+			
 		void Scroll (int lines)
 		{
 			Log ("Scroll: {0}", lines);
-			long newpos = lines > 0 ? ScanForward (lines) : ScanBackward (-lines);
+			long newpos = Scan (lines);
 			Log ("Scroll: {0} top_byte={1} newpos={2}", lines, top_byte, newpos);
 			if (newpos == -1)
 				return;
@@ -319,7 +436,7 @@ namespace MouselessCommander {
 			// cursor, control-p
 			case Curses.KeyUp:
 			case 16:
-				Scroll (-h);
+				Scroll (-1);
 				break;
 				
 			default:
@@ -336,6 +453,18 @@ namespace MouselessCommander {
 		string [] bar_labels = new string [] {
 			"Help", "Wrap", "Quit", "Hex", "Line", "RxSrch", "Search", "Raw", "Unform", "Quit"
 		};
+
+		void SetWrap (bool wrap)
+		{
+			if (view.Wrap){
+				view.Wrap = false;
+				bar_labels [1] = "Wrap";
+			} else {
+				view.Wrap = true;
+				bar_labels [1] = "Unwrap";
+			}
+			Curses.refresh ();
+		}
 		
 		public FullView (Stream source) : base (0, 0, Application.Cols, Application.Lines)
 		{
@@ -343,6 +472,9 @@ namespace MouselessCommander {
 			bar = new ButtonBar (bar_labels);
 			bar.Action += delegate (int n){
 				switch (n){
+				case 2:
+					SetWrap (!view.Wrap);
+					break;
 				case 3:
 				case 10:
 					Running = false;
