@@ -112,7 +112,7 @@ namespace MouselessCommander {
 		// until the end of the widget area
 		public void ClearToEnd (int ccol, int crow)
 		{
-			for (int r = crow; r < h-1; r++){
+			for (int r = crow; r < h; r++){
 				Move (r+y, ccol+x);
 				for (int c = ccol; c < w; c++)
 					Curses.addch (' ');
@@ -150,14 +150,14 @@ namespace MouselessCommander {
 			Curses.attrset (Container.ContainerColorNormal);
 			Move (y+1, x);
 			SetPosition (top_byte);
-			for (int row = 0; row < h-1; ){
+			for (int row = 0; row < h; ){
 				int c = GetChar ();
 				switch (c){
 					/* End of file */
 				case -1:
 					ClearToEnd (col, row);
-					row = h-1;
-					break;
+					row = h;
+					continue;
 
 				case 10:
 					ClearToEnd (col);
@@ -403,25 +403,44 @@ namespace MouselessCommander {
 			dirty = 0;
 		}
 
-		long Scan (int lines)
+		long Scan (long from, int lines)
 		{
 			if (!Raw)
 				reader.DiscardBufferedData ();
 			if (lines > 0)
-				return Wrap ? WrappedScanForward (top_byte, lines) : ScanForward (top_byte, lines);
+				return Wrap ? WrappedScanForward (from, lines) : ScanForward (from, lines);
 			else
-				return Wrap ? WrappedScanBackward (top_byte, -lines) : ScanBackward (top_byte, -lines);
+				return Wrap ? WrappedScanBackward (from, -lines) : ScanBackward (from, -lines);
 		}
 			
 		void Scroll (int lines)
 		{
 			Log ("Scroll: {0}", lines);
-			long newpos = Scan (lines);
+			long newpos = Scan (top_byte, lines);
 			Log ("Scroll: {0} top_byte={1} newpos={2}", lines, top_byte, newpos);
 			if (newpos == -1)
 				return;
 			SetTopByte (newpos);
 			UpdateView ();
+		}
+
+		void GoTop ()
+		{
+			SetTopByte (first_file_byte);
+			Redraw ();
+			Curses.refresh ();
+		}
+
+		void GoBottom ()
+		{
+			long last = source.Length;
+			SetPosition (last);
+			var newtop = Scan (last > 0 ? last-1 : 0, -h+1);
+			if (newtop == -1)
+				return;
+			SetTopByte (newtop);
+			Redraw ();
+			Curses.refresh ();
 		}
 		
 		public override bool ProcessKey (int key)
@@ -452,7 +471,16 @@ namespace MouselessCommander {
 			case 16:
 				Scroll (-1);
 				break;
-				
+
+			case Curses.KeyHome:
+			case Curses.KeyAlt + '<':
+				GoTop ();
+				break;
+
+			case Curses.KeyEnd:
+			case Curses.KeyAlt + '>':
+				GoBottom ();
+				break;
 			default:
 				return false;
 			}
@@ -482,7 +510,7 @@ namespace MouselessCommander {
 		
 		public FullView (Stream source) : base (0, 0, Application.Cols, Application.Lines)
 		{
-			view = new ViewWidget (0, 0, Application.Cols, Application.Lines-2, false, source);
+			view = new ViewWidget (0, 0, Application.Cols, Application.Lines-1, false, source);
 			bar = new ButtonBar (bar_labels);
 			bar.Action += delegate (int n){
 				switch (n){
