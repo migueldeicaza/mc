@@ -14,6 +14,7 @@ using Mono.Terminal;
 using Mono.Unix;
 using Mono.Unix.Native;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace MouselessCommander {
 
@@ -646,17 +647,18 @@ namespace MouselessCommander {
 			else
 				d.Add (new Label (1, 0, String.Format (msg_file, listing.GetPathAt (selected).Ellipsize (ilen-msg_file.Length))));
 
+			bool proceed = false;
+
 			var e = new Entry (1, 1, ilen, target_dir ?? "");
 			d.Add (e);
 
-			bool proceed = false;
 			var b = new Button (0, 0, "Ok", true);
 			b.Clicked += delegate {
 				d.Running = false;
 				proceed = true;
 			};
 			d.AddButton (b);
-			b = new Button (0, 0, "Cancel", true);
+			b = new Button (0, 0, "Cancel", false);
 			b.Clicked += (o,s) => d.Running = false;
 			d.AddButton (b);
 			
@@ -664,15 +666,32 @@ namespace MouselessCommander {
 			if (!proceed)
 				return;
 
+			Application.MainLoop.AddTimeout (TimeSpan.FromSeconds (1), ml => {
+					Log ("Updating GUI at {0}", DateTime.Now);
+				// Update GUI here every second
+				return true;
+			});
+				
 			var progress = new ProgressInteraction ("Copying", marked > 0 ? marked : 1);
-			using (var ctx = new CopyOperation (progress)){
-				foreach (var node in Selection ()){
-					bool isDir = node is Listing.DirNode;
-					var r = ctx.Perform (CurrentPath, listing.GetPathAt (node.StartIdx), isDir, node.Info.Protection, target_dir);
-					if (r == FileOperation.Result.Cancel)
-						break;
-				}
+			var runstate = Application.Begin (progress);
+			using (var copyOperation = new CopyOperation (progress)){
+				Task t = Task.Factory.StartNew (delegate {
+						for (int i = 0; i < 10; i++){
+							System.Threading.Thread.Sleep (333);
+						}
+#if false
+					foreach (var node in Selection ()){
+						bool isDir = node is Listing.DirNode;
+						var r = copyOperation.Perform (CurrentPath, listing.GetPathAt (node.StartIdx), isDir, node.Info.Protection, target_dir);
+						if (r == FileOperation.Result.Cancel)
+							break;
+					}
+#endif
+					Application.Stop ();
+				}, null);
+				Application.RunLoop (runstate, true);
 			}
+			Application.End (runstate);
 		}
 
 		public override bool ProcessKey (int key)

@@ -20,6 +20,12 @@ File Management:
    Rename, Move, Delete.
    Background operations       
 
+Copy:
+	Disable copying ..
+
+Panel:
+	Do not render .. on nested views
+
 Viewer:
 	Hex mode
 	Formated mode (nroff pages, html pages)
