@@ -22,7 +22,7 @@ namespace MouselessCommander {
 		Entry entry;
 		
 		string [] bar_labels = new string [] {
-			"Help", "Menu", "View", "Edit", "Copy", "RenMov", "Mkdir", "Delete", "PullDn", "Quit"
+			"", "", "View", "", "Copy", "RenMov", "", "", "PullDn", "Quit"
 		};
 
 		MenuBarItem [] mc_menu = new MenuBarItem [] {

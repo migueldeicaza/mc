@@ -128,12 +128,64 @@ namespace MouselessCommander {
 	}
 
 	public class ProgressInteraction : BasicInteraction, IProgressInteraction {
-		public ProgressInteraction (string title, int count) : base (title)
+		Label filePct, bytesPct, countPct;
+
+		public ProgressInteraction (string title, int fileCount, double? byteCount) : base (title)
 		{
-			Count = count;
+			Count = fileCount;
+			ByteCount = byteCount;
+
+			Add (new Label (3, 2, "File"));
+			Add ((filePct = new Label (30, 2, "")));
+
+			if (Count > 1){
+				Add (new Label (3, 3, "Count"));
+				Add ((countPct = new Label (30, 3, "")));
+			}
+
+			if (byteCount.HasValue){
+				Add (new Label (3, 4, "Bytes"));
+				Add ((bytesPct = new Label (30, 4, "")));
+			}
+
+			AddButton (new Button (10, 7, "Cancel"));
 		}
 
 		public int Count { get; private set; }
+		public double? ByteCount { get; private set; }
+
+		int calls;
+		public void UpdateStatus (CopyOperation copyOperation)
+		{
+			int processedFiles;
+			double processedBytes;
+			long fileSize, fileProgress;
+			
+			lock (copyOperation){
+				processedFiles = copyOperation.ProcessedFiles;
+				processedBytes = copyOperation.ProcessedBytes;
+				fileSize = copyOperation.CurrentFileSize;
+				fileProgress = copyOperation.CurrentFileProgress;
+			}
+
+			var progress = fileSize > 0 ? (fileProgress / (double) fileSize) : 0.0;
+			filePct.Text = String.Format ("Called: {0}", calls++); //pct (progress);
+			
+			if (Count != 1){
+				progress = processedFiles / (double) Count;
+				countPct.Text = pct (progress);
+			}
+			if (ByteCount.HasValue){
+				progress = processedBytes / ByteCount.Value;
+				bytesPct.Text = pct (progress);
+			}
+			Application.Refresh ();
+		}
+
+		static string pct (double ratio)
+		{
+			return String.Format ("{0:g2}", ratio*100);
+		}
 	}
 	
 	public static class StringExtensions {

@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using Mono.Unix;
 using Mono.Unix.Native;
 using System.Runtime.InteropServices;
+using Mono.Terminal;
 
 namespace MouselessCommander {
 	[Flags]
@@ -91,6 +92,12 @@ namespace MouselessCommander {
 	}
 	
 	public class CopyOperation : FileOperation {
+		// These require locking
+		public int ProcessedFiles;
+		public double ProcessedBytes;
+		public long CurrentFileSize;
+		public long CurrentFileProgress;
+		
 		TargetExistsAction target_exists_action;
 		bool skip;
 		Dictionary<string,FilePermissions> dirs_created;
@@ -124,7 +131,7 @@ namespace MouselessCommander {
 					case OResult.Cancel:
 						return Result.Cancel;
 					}
-				} 
+				}
 				dirs_created [target_path] = protection;
 			}
 			
@@ -140,8 +147,9 @@ namespace MouselessCommander {
 					if (CopyDirectory (source, target, entry.Protection) == Result.Cancel)
 						return Result.Cancel;
 				} else {
-					if (!CopyFile (source, target))
+					if (!CopyFile (source, target)){
 						return skip ? Result.Skip : Result.Cancel;
+					}
 				}
 			}
 			return Result.Ok;
@@ -171,17 +179,22 @@ namespace MouselessCommander {
 			bool target_exists = false;
 			// Stat target
 			Stat tstat;
+
+			lock (this)
+				ProcessedFiles++;
+
 			while (Syscall.stat (target_path, out tstat) == 0){
 				if (tstat.st_mode.HasFlag (FilePermissions.S_IFDIR)){
 					if (ShouldRetryOperation ("Target file is a directory", "Source file \"{0}\"",
 								  Path.GetFileName (source_absolute_path)))
 						continue;
 					return false;
+				} else {
+					target_exists = true;
 				}
-				target_exists = true;
 				break;
 			}
-			
+
 			// Open Source
 			int source_fd;
 			while (true){
@@ -210,17 +223,25 @@ namespace MouselessCommander {
 				goto close_source;
 			}
 
-			if (target_exists && target_exists_action < TargetExistsAction.AlwaysOverwrite){
-				target_exists_action = Interaction.TargetExists (
-					target_path,
-					NativeConvert.ToDateTime (stat.st_mtime), stat.st_size,
-					NativeConvert.ToDateTime (tstat.st_mtime), tstat.st_size, Interaction.Count > 1);
+			lock (this){
+				CurrentFileProgress = 0;
+				CurrentFileSize = tstat.st_size;
 			}
-			if (target_exists_action == TargetExistsAction.Cancel)
-				goto close_source;
-
-			if (target_exists_action == TargetExistsAction.Skip)
-				goto close_source;
+			
+			if (target_exists){
+				if (target_exists_action < TargetExistsAction.AlwaysOverwrite){
+					target_exists_action = Interaction.TargetExists (
+						target_path,
+						NativeConvert.ToDateTime (stat.st_mtime), stat.st_size,
+						NativeConvert.ToDateTime (tstat.st_mtime), tstat.st_size, Interaction.Count > 1);
+				}
+				
+				if (target_exists_action == TargetExistsAction.Cancel)
+					goto close_source;
+				
+				if (target_exists_action == TargetExistsAction.Skip)
+					goto close_source;
+			}
 			
 			// Open target
 			int target_fd;
@@ -237,7 +258,11 @@ namespace MouselessCommander {
 					goto case TargetExistsAction.Overwrite;
 				skip = true;
 				goto close_source;
-				
+
+
+				// Real cancels are taken care of immediately after the dialog
+				// this means: never used, target does not exist.
+			case TargetExistsAction.Cancel:
 			case TargetExistsAction.AlwaysOverwrite:
 			case TargetExistsAction.Overwrite:
 				target_fd = Syscall.open (target_path, OpenFlags.O_CREAT | OpenFlags.O_WRONLY, FilePermissions.S_IWUSR);
@@ -247,7 +272,7 @@ namespace MouselessCommander {
 				target_fd = Syscall.open (target_path, OpenFlags.O_APPEND, FilePermissions.S_IWUSR);
 				break;
 			default:
-				throw new Exception ("Internal error: unhandled TargetExistsAction value");
+				throw new Exception (String.Format ("Internal error: unhandled TargetExistsAction value {0}", target_exists_action));
 			}
 			
 			while (true){
@@ -261,26 +286,32 @@ namespace MouselessCommander {
 
 			AllocateBuffer ();
 			long n;
-			
-			while (true){
-				n = Syscall.read (source_fd, io_buffer, COPY_BUFFER_SIZE);
 
-				if (n != -1)
-					break;
+			do {
+				while (true){
+					n = Syscall.read (source_fd, io_buffer, COPY_BUFFER_SIZE);
+					
+					if (n != -1)
+						break;
 
-				if (ShouldRetryOperation ("While reading \"{0}\"", Path.GetFileName (source_absolute_path)))
-					continue;
-				goto close_both;
-			}
-			while (true){
-				long count = Syscall.write (target_fd, io_buffer, (ulong) n);
-				if (count != -1)
-					break;
-
-				if (ShouldRetryOperation ("While writing \"{0}\"", target_path))
-					continue;
-				goto close_both;
-			}
+					if (ShouldRetryOperation ("While reading \"{0}\"", Path.GetFileName (source_absolute_path)))
+						continue;
+					goto close_both;
+				}
+				while (true){
+					long count = Syscall.write (target_fd, io_buffer, (ulong) n);
+					if (count != -1)
+						break;
+					
+					if (ShouldRetryOperation ("While writing \"{0}\"", target_path))
+						continue;
+					goto close_both;
+				}
+				lock (this){
+					ProcessedBytes += n;
+					CurrentFileSize += n;
+				}
+			} while (n != 0);
 
 			// File mode
 			while (true){

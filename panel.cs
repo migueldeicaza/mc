@@ -6,6 +6,7 @@
 //
 // Licensed under the MIT X11 license
 //
+//#define DEBUG
 using System;
 using System.Collections;
 using System.IO;
@@ -644,13 +645,13 @@ namespace MouselessCommander {
 
 			if (marked > 1)
 				d.Add (new Label (1, 0, String.Format ("Copy {0} files", marked)));
-			else
+			else 
 				d.Add (new Label (1, 0, String.Format (msg_file, listing.GetPathAt (selected).Ellipsize (ilen-msg_file.Length))));
 
 			bool proceed = false;
 
-			var e = new Entry (1, 1, ilen, target_dir ?? "");
-			d.Add (e);
+			var targetEntry = new Entry (1, 1, ilen, target_dir ?? "");
+			d.Add (targetEntry);
 
 			var b = new Button (0, 0, "Ok", true);
 			b.Clicked += delegate {
@@ -666,31 +667,49 @@ namespace MouselessCommander {
 			if (!proceed)
 				return;
 
-			Application.MainLoop.AddTimeout (TimeSpan.FromSeconds (1), ml => {
-					Log ("Updating GUI at {0}", DateTime.Now);
-				// Update GUI here every second
-				return true;
-			});
+			if (targetEntry.Text == ""){
+				Message.Error ("Empty target directory");
+				return;
+			}
 				
-			var progress = new ProgressInteraction ("Copying", marked > 0 ? marked : 1);
+			PerformCopy (targetEntry.Text);
+		}
+
+		int ComputeTotalFiles ()
+		{
+			// Later we should change this with a directory scan
+			return marked > 0 ? marked : 1;
+		}
+		
+		void PerformCopy (string target_dir)
+		{
+			double? total_bytes = null;
+
+			var progress = new ProgressInteraction ("Copying", ComputeTotalFiles (), total_bytes);
 			var runstate = Application.Begin (progress);
 			using (var copyOperation = new CopyOperation (progress)){
+#if !DEBUG
+				var timer = Application.MainLoop.AddTimeout (TimeSpan.FromSeconds (1), mainloop => {
+					progress.UpdateStatus (copyOperation);
+					return true;
+				});
 				Task t = Task.Factory.StartNew (delegate {
-						for (int i = 0; i < 10; i++){
-							System.Threading.Thread.Sleep (333);
-						}
-#if false
+#endif
 					foreach (var node in Selection ()){
 						bool isDir = node is Listing.DirNode;
 						var r = copyOperation.Perform (CurrentPath, listing.GetPathAt (node.StartIdx), isDir, node.Info.Protection, target_dir);
 						if (r == FileOperation.Result.Cancel)
 							break;
 					}
-#endif
+
+#if !DEBUG
 					Application.Stop ();
 				}, null);
 				Application.RunLoop (runstate, true);
+				Application.MainLoop.RemoveTimeout (timer);
+#endif
 			}
+			
 			Application.End (runstate);
 		}
 

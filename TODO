@@ -1,3 +1,10 @@
+Bugs:
+	Handle symlinks in copy
+		(A broken symlink breaks, we need to copy them, regardless of the targt)
+	Error dialog box for broken symlinks show cancel button at the top
+	Error dialog box for files is too short (5 chars)
+	First char in the caption for an error is not inverted? [ Error ] (the first space is not the right color)
+
 Features Missing:
 	FUSE binding (instead of VFS)
 	Subshell support
